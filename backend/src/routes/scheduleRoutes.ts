@@ -6,25 +6,8 @@ import {
   MAX_SHIFTS_PER_WEEK,
 } from '../config';
 import { getCollectionDocs, updateDocById } from '../utils/firestoreUtils';
-// We'll create and import this next
-// import { createWeeklySchedule } from '../scheduleGenerator'; 
-
-// Define a type for your Employee data (mirroring frontend/types.ts and backend/routes/employeeRoutes.ts)
-interface Employee {
-  id: string; // Firestore ID will be a string
-  name: string;
-  total_shifts_assigned: number;
-  total_day_shifts_assigned: number;
-  total_night_shifts_assigned: number;
-  // Add any other fields your Employee object might have
-}
-
-// Define a type for the preferences payload from the frontend
-interface EmployeePreferencesPayload {
-  [employeeId: string]: {
-    [shiftSlot: string]: string; // "0", "1", or ""
-  };
-}
+import { createWeeklySchedule } from '../scheduleGenerator';
+import { Employee, EmployeePreferencesPayload } from '../types'; // Assuming types.ts exists
 
 const router: Router = express.Router();
 
@@ -46,20 +29,14 @@ router.post('/generate_schedule', async (req: Request, res: Response): Promise<a
       employeesDict[emp.id] = { ...emp }; // Create a mutable copy
     });
 
-    // Placeholder for the actual schedule generation logic
-    // This will be replaced by a call to the translated createWeeklySchedule function
-    // For now, let's mock the output structure
-    const mockScheduleOutput = {
-        proposed_schedule_with_ids: {} as Record<string, string[]>, // e.g., { "Sunday_Day": ["id1", "id2"] }
-        proposed_schedule_with_names: {} as Record<string, string>, // e.g., { "Sunday_Day": "Alice, Bob" }
-        unfilled_shifts: [] as string[],
-        employee_shifts_this_week: {} as Record<string, number>, // e.g., { "id1": 2 }
-    };
-    // TODO: Replace mockScheduleOutput with actual call:
-    // const { proposed_schedule_with_ids, proposed_schedule_with_names, unfilled_shifts, employee_shifts_this_week } = 
-    //   await createWeeklySchedule(employeePreferencesRaw, employeesDict, DAYS_OF_WEEK, SHIFT_TYPES, MAX_SHIFTS_PER_WEEK);
-
-    const { proposed_schedule_with_ids, proposed_schedule_with_names, unfilled_shifts, employee_shifts_this_week } = mockScheduleOutput;
+    const { 
+      proposed_schedule_with_ids, 
+      proposed_schedule_with_names, 
+      unfilled_shifts, 
+      employee_shifts_this_week 
+    } = createWeeklySchedule(employeePreferencesRaw, employeesDict, DAYS_OF_WEEK, SHIFT_TYPES, MAX_SHIFTS_PER_WEEK);
+    // Note: createWeeklySchedule is synchronous in this translation, matching the Python version.
+    // If it were to become async (e.g., for more complex DB lookups within), you'd use 'await'.
 
     // Update total employee shift counts based on the generated schedule for *this* week
     const updatedEmployeesForResponse = { ...employeesDict }; // Work with copies
@@ -80,7 +57,7 @@ router.post('/generate_schedule', async (req: Request, res: Response): Promise<a
     const updatedEmployeesList = Object.values(updatedEmployeesForResponse).sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
 
     res.status(200).json({
-      message: "Schedule generation (mocked) successful.",
+      message: "Schedule generated successfully.",
       proposed_schedule_with_ids,
       proposed_schedule_with_names,
       unfilled_shifts,

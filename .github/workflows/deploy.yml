@@ -25,12 +25,21 @@ jobs:
         run: npm run build # Or your frontend build command
         working-directory: ./frontend
 
+      - name: Install Backend Dependencies
+        run: npm install
+        working-directory: ./backend
+
+      - name: Build Backend
+        run: npm run build # Or your frontend build command
+        working-directory: ./backend
+
       # Backend dependencies are installed by Firebase CLI during predeploy hook in firebase.json
       # Backend build is also handled by predeploy hook in firebase.json
 
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
+          targets: hosting,functions # Explicitly deploy both hosting and functions
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_SHAVZAK }}' # GitHub Secret for deployment
           projectId: 'shavzak-ari-ve-niro' 

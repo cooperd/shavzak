@@ -10,9 +10,6 @@ yarn.lock # Optional: if you use yarn, commit this.
 dist/
 *.tsbuildinfo
 
-# Firebase
-shavzak-firebase-adminsdk.json # Your specific service account key file
-
 # Environment variables
 .env
 .env.*

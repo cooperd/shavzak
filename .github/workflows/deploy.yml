@@ -24,9 +24,6 @@ jobs:
       - name: Build Frontend
         run: npm run build # Or your frontend build command
         working-directory: ./frontend
-        env:
-          # If your frontend needs the API URL at build time and it's not just relative /api
-          # VITE_API_BASE_URL: /api # Example for Vite if using relative paths
 
       # Backend dependencies are installed by Firebase CLI during predeploy hook in firebase.json
       # Backend build is also handled by predeploy hook in firebase.json

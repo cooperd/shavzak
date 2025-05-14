@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
-from config import EMPLOYEES_DB_FILE, DAYS_OF_WEEK, SHIFT_TYPES, MAX_SHIFTS_PER_WEEK
-from utils import load_json_data
+from ..config import EMPLOYEES_COLLECTION, DAYS_OF_WEEK, SHIFT_TYPES, MAX_SHIFTS_PER_WEEK # Use EMPLOYEES_COLLECTION
+from ..utils import get_all_docs # Use Firestore utility
 from schedule_generator import create_weekly_schedule
 
 schedule_bp = Blueprint('schedule_api', __name__, url_prefix='/api')
@@ -14,7 +14,7 @@ def generate_schedule_api():
     except Exception as e:
         return jsonify({"error": f"Invalid JSON input: {str(e)}"}), 400
 
-    employees_data = load_json_data(EMPLOYEES_DB_FILE, [])
+    employees_data = get_all_docs(EMPLOYEES_COLLECTION) # Fetch employees from Firestore
     if not employees_data:
         return jsonify({"error": "No employee data found. Please add employees."}), 500
 

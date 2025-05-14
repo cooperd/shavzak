@@ -1,0 +1,43 @@
+name: Deploy Shavzak to Firebase
+
+on:
+  push:
+    branches:
+      - main # Or your primary deployment branch
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22' # Match backend/package.json engines.node
+
+      - name: Install Frontend Dependencies
+        run: npm install
+        working-directory: ./frontend
+
+      - name: Build Frontend
+        run: npm run build # Or your frontend build command
+        working-directory: ./frontend
+        env:
+          # If your frontend needs the API URL at build time and it's not just relative /api
+          # VITE_API_BASE_URL: /api # Example for Vite if using relative paths
+
+      # Backend dependencies are installed by Firebase CLI during predeploy hook in firebase.json
+      # Backend build is also handled by predeploy hook in firebase.json
+
+      - name: Deploy to Firebase
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_SHAVZAK }}' # GitHub Secret for deployment
+          projectId: 'shavzak-ari-ve-niro' 
+          channelId: live # Deploy to the live channel (omit for default or use 'preview' for PR previews)
+        env:
+          FIREBASE_CLI_PREVIEWS: hostingchannels # Enable hosting channel features if used
+          # GITHUB_CONTEXT: ${{ toJson(github) }} # For debugging if needed

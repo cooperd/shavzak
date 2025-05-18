@@ -8,6 +8,11 @@ on:
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./frontend
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -17,29 +22,27 @@ jobs:
         with:
           node-version: '22' # Match backend/package.json engines.node
 
+      - name: Create .env file
+        run: |
+          echo "VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}" >> .env
+          echo "VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}" >> .env
+          echo "VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}" >> .env
+          echo "VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}" >> .env
+          echo "VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}" >> .env
+          echo "VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}" >> .env
+          echo "VITE_FIREBASE_MEASUREMENT_ID=${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}" >> .env
+        # This .env file is created inside the ./frontend directory due to `working-directory`
+
+
       - name: Install Frontend Dependencies
         run: npm install
-        working-directory: ./frontend
 
       - name: Build Frontend
         run: npm run build # Or your frontend build command
-        working-directory: ./frontend
-
-      - name: Install Backend Dependencies
-        run: npm install
-        working-directory: ./backend
-
-      - name: Build Backend
-        run: npm run build # Or your frontend build command
-        working-directory: ./backend
-
-      # Backend dependencies are installed by Firebase CLI during predeploy hook in firebase.json
-      # Backend build is also handled by predeploy hook in firebase.json
 
       - name: Deploy to Firebase
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          targets: hosting,functions # Explicitly deploy both hosting and functions
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
           firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_SHAVZAK }}' # GitHub Secret for deployment
           projectId: 'shavzak-ari-ve-niro' 

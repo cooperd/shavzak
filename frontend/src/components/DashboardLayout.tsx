@@ -5,19 +5,26 @@ import {
   Box,
   CssBaseline,
   Drawer,
+  IconButton,
   List,
   ListItem,
   ListItemButton,
   ListItemIcon,
   ListItemText,
   Toolbar,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import ScheduleIcon from '@mui/icons-material/CalendarMonth'; // For Weekly Schedule
 import PeopleIcon from '@mui/icons-material/People'; // For Employees
 import TuneIcon from '@mui/icons-material/Tune'; // For Weekly Preferences
+import LogoutIcon from '@mui/icons-material/Logout'; // For Logout
 
 const drawerWidth = 240;
+
+interface DashboardLayoutProps {
+  onLogout: () => Promise<any>; // Callback for logout
+}
 
 const navItems = [
   { text: 'Weekly Schedule', path: '/', icon: <ScheduleIcon /> },
@@ -25,7 +32,12 @@ const navItems = [
   { text: 'Weekly Preferences', path: '/preferences', icon: <TuneIcon /> },
 ];
 
-const DashboardLayout: React.FC = () => {
+const DashboardLayout: React.FC<DashboardLayoutProps> = ({ onLogout }) => {
+  const handleLogout = async () => {
+    await onLogout();
+    // Navigation to /auth will happen automatically due to App.tsx logic
+  };
+
   return (
     <Box sx={{ display: 'flex' }}>
       <CssBaseline />
@@ -37,6 +49,16 @@ const DashboardLayout: React.FC = () => {
           <Typography variant="h6" noWrap component="div">
             Shavzak Shift Scheduler
           </Typography>
+          {/* Logout Button in AppBar */}
+          <Tooltip title="Logout" style={{ marginLeft: 'auto' }}>
+            <IconButton
+              color="inherit"
+              aria-label="logout"
+              onClick={handleLogout} // Assuming handleLogout is defined from props
+            >
+              <LogoutIcon />
+            </IconButton>
+          </Tooltip>
         </Toolbar>
       </AppBar>
       <Drawer

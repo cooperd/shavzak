@@ -1,6 +1,6 @@
-import { StrictMode } from 'react'
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { useSession, useDescope } from '@descope/react-sdk';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import './utils/firebase.config';
 import { db } from './utils/firebase.config'; // Import Firestore instance
@@ -10,6 +10,7 @@ import EmployeeManager from './components/EmployeeManager';
 import PreferenceGridAndCsvLoader from './components/PreferenceGridAndCsvLoader';
 import ProposedScheduleDisplay from './components/ProposedScheduleDisplay';
 import DashboardLayout from './components/DashboardLayout'; // Import the DashboardLayout
+import AuthPage from './components/AuthPage'; // Import the AuthPage
 import type { Employee, EmployeePreferences } from './types'; // Ensure Employee type is imported
 import { createWeeklyScheduleFrontend, type FrontendScheduleOutput } from './utils/scheduleGenerator'; // Import frontend scheduler
 
@@ -17,6 +18,9 @@ const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "F
 const SHIFT_TYPES = ["Day", "Night"];
 const MAX_SHIFTS_PER_WEEK = 5; // Example: Make this configurable if needed
 function App() {
+  const { isAuthenticated, isSessionLoading } = useSession();
+  const { logout } = useDescope();
+
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState<boolean>(true);
   const [employeeError, setEmployeeError] = useState<string | null>(null);
@@ -56,8 +60,10 @@ function App() {
   };
 
   useEffect(() => {
-    fetchEmployees(); // Fetch employees when the app mounts
-  }, []);
+    if (isAuthenticated) {
+      fetchEmployees(); // Fetch employees only if authenticated
+    }
+  }, [isAuthenticated]); // Re-run if authentication status changes
 
   const handlePreferencesUpdate = (newPreferences: EmployeePreferences) => {
     setPreferences(newPreferences);
@@ -129,13 +135,25 @@ function App() {
     }
   };
 
+  if (isSessionLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
 
   return (
-    <StrictMode>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<DashboardLayout />}>
+    <BrowserRouter>
+      <Routes>
+        {!isAuthenticated ? (
+          <>
+            <Route path="/auth" element={<AuthPage />} />
+            <Route path="*" element={<Navigate to="/auth" replace />} />
+          </>
+        ) : (
+          <Route path="/" element={<DashboardLayout onLogout={logout} />}> {/* Pass logout to DashboardLayout */}
             {/* Default route: Weekly Schedule & Preferences */}
             <Route
               index
@@ -187,9 +205,9 @@ function App() {
             />
             {/* You can add more routes here as needed */}
           </Route>
-        </Routes>
-      </BrowserRouter>
-    </StrictMode>
+        )}
+      </Routes>
+    </BrowserRouter>
   )
 }
 

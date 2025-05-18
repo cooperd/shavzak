@@ -10,7 +10,7 @@ import EmployeeManager from './components/EmployeeManager';
 import PreferenceGridAndCsvLoader from './components/PreferenceGridAndCsvLoader';
 import ProposedScheduleDisplay from './components/ProposedScheduleDisplay';
 import DashboardLayout from './components/DashboardLayout'; // Import the DashboardLayout
-import type { Employee, EmployeePreferences, ScheduleGenerationResponse } from './types'; // Ensure Employee type is imported
+import type { Employee, EmployeePreferences } from './types'; // Ensure Employee type is imported
 import { createWeeklyScheduleFrontend, type FrontendScheduleOutput } from './utils/scheduleGenerator'; // Import frontend scheduler
 
 const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

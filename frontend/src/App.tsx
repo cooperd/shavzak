@@ -11,6 +11,11 @@ import PreferenceGridAndCsvLoader from './components/PreferenceGridAndCsvLoader'
 import ProposedScheduleDisplay from './components/ProposedScheduleDisplay';
 import DashboardLayout from './components/DashboardLayout'; // Import the DashboardLayout
 import type { Employee, EmployeePreferences, ScheduleGenerationResponse } from './types'; // Ensure Employee type is imported
+import { createWeeklyScheduleFrontend, type FrontendScheduleOutput } from './utils/scheduleGenerator'; // Import frontend scheduler
+
+const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const SHIFT_TYPES = ["Day", "Night"];
+const MAX_SHIFTS_PER_WEEK = 5; // Example: Make this configurable if needed
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState<boolean>(true);
@@ -71,52 +76,60 @@ function App() {
     setScheduleMessage(null);
     setProposedSchedule(null); // Clear previous schedule
 
-    try {
-      const payload = {
-        preferences: preferences,
-        employees: employees,
-      };
-      // console.log("Sending to /api/generate_schedule:", payload);
+    // Convert employees array to dictionary for the scheduler
+    const employeesDict: Record<string, Employee> = employees.reduce((acc, emp) => {
+      acc[emp.id] = emp;
+      return acc;
+    }, {} as Record<string, Employee>);
 
-      const response = await fetch(`/api/generate_schedule`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
+    try {
+      // Call the local schedule generation function
+      const scheduleOutput: FrontendScheduleOutput = createWeeklyScheduleFrontend(
+        preferences,
+        employeesDict,
+        DAYS_OF_WEEK,
+        SHIFT_TYPES,
+        MAX_SHIFTS_PER_WEEK
+      );
+
+      // Update employee shift counts
+      const updatedEmployees = employees.map(emp => {
+        const dayShiftsThisWeek = scheduleOutput.employee_day_shifts_this_week[emp.id] || 0;
+        const nightShiftsThisWeek = scheduleOutput.employee_night_shifts_this_week[emp.id] || 0;
+        const totalShiftsThisWeek = dayShiftsThisWeek + nightShiftsThisWeek; // or scheduleOutput.employee_shifts_this_week[emp.id]
+
+        return {
+          ...emp,
+          total_shifts_assigned: (emp.total_shifts_assigned || 0) + totalShiftsThisWeek,
+          total_day_shifts_assigned: (emp.total_day_shifts_assigned || 0) + dayShiftsThisWeek,
+          total_night_shifts_assigned: (emp.total_night_shifts_assigned || 0) + nightShiftsThisWeek,
+        };
       });
 
-      let data;
-      try {
-        data = await response.json() as ScheduleGenerationResponse; // Use the new type here
-      } catch (jsonError) {
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}. Server response was not valid JSON.`);
-        }
-        throw new Error("Failed to parse server response as JSON, though request seemed successful.");
-      }
+      setProposedSchedule(scheduleOutput.proposed_schedule_with_ids);
+      setEmployees(updatedEmployees);
 
-      if (!response.ok) {
-        throw new Error(data?.message || `HTTP error! status: ${response.status}`);
+      let message = "Schedule generated successfully!";
+      if (scheduleOutput.unfilled_shifts.length > 0) {
+        message += ` However, ${scheduleOutput.unfilled_shifts.length} shift(s) could not be fully staffed: ${scheduleOutput.unfilled_shifts.join(', ')}.`;
       }
+      setScheduleMessage(message);
 
-      // Validate the structure of the successful response
-      if (data && typeof data.proposed_schedule_with_ids === 'object' && Array.isArray(data.updated_employees)) {
-        setProposedSchedule(data.proposed_schedule_with_ids);
-        setEmployees(data.updated_employees); // Update employees with new shift counts
-        setScheduleMessage(data.message || "Schedule generated successfully!");
-        // console.log("Schedule proposed:", data.proposed_schedule_with_ids);
-      } else {
-        console.error("Unexpected data structure from /api/generate_schedule:", data);
-        throw new Error("Received invalid data structure from server after generating schedule.");
-      }
     } catch (e: any) {
-      console.error("Failed to generate schedule:", e);
-      setScheduleError(e.message || "An unknown error occurred while generating the schedule.");
+      console.error("Failed to generate schedule with frontend logic:", e);
+      // Check if it's an error object with a message property
+      if (e && typeof e.message === 'string') {
+        setScheduleError(e.message);
+      } else {
+        // Fallback for other types of thrown errors
+        setScheduleError("An unknown error occurred while generating the schedule with frontend logic.");
+      }
     } finally {
       setScheduleLoading(false);
     }
   };
+
+
 
   return (
     <StrictMode>

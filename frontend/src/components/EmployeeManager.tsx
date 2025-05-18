@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Employee } from '../types';
+import { db } from '../utils/firebase.config'; // Import Firestore instance
+import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc } from 'firebase/firestore'; // Import Firestore functions
 import {
   Button,
   CircularProgress,
@@ -23,8 +25,6 @@ import {
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 
-const API_BASE_URL = ''; // Assuming Flask serves from root, same as before
-
 interface EmployeeManagerProps {
   onEmployeeChange: () => void; // Callback to notify parent when employees change
 }
@@ -43,15 +43,22 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = (props) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/employees`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data: Employee[] = await response.json();
-      setEmployees(data);
+      const employeesCollectionRef = collection(db, "employees");
+      const querySnapshot = await getDocs(employeesCollectionRef);
+      const fetchedEmployees: Employee[] = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: data.name || 'Unnamed Employee', // Default if name is missing
+          total_shifts_assigned: data.total_shifts_assigned || 0,
+          total_day_shifts_assigned: data.total_day_shifts_assigned || 0,
+          total_night_shifts_assigned: data.total_night_shifts_assigned || 0,
+        };
+      });
+      setEmployees(fetchedEmployees);
     } catch (e: any) {
       console.error("Failed to fetch employees:", e);
-      setError(`Failed to load employees: ${e.message}`);
+      setError(`Failed to load employees from Firestore: ${e.message}`);
     } finally {
       setLoading(false);
     }
@@ -89,45 +96,43 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = (props) => {
     }
     setDialogError(null);
 
-    const url = editingEmployee
-      ? `${API_BASE_URL}/api/employees/${editingEmployee.id}`
-      : `${API_BASE_URL}/api/employees`;
-    const method = editingEmployee ? 'PUT' : 'POST';
-
     try {
-      const response = await fetch(url, {
-        method: method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name: employeeNameInput }),
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      if (editingEmployee) {
+        // Update existing employee
+        const employeeDocRef = doc(db, "employees", editingEmployee.id);
+        await updateDoc(employeeDocRef, {
+          name: employeeNameInput,
+          // Note: We are only updating the name here.
+          // If other fields like shift counts are managed elsewhere or calculated,
+          // this is fine. If they are meant to be directly editable or reset,
+          // you might need to adjust this.
+        });
+      } else {
+        // Add new employee
+        // For a new employee, we'll initialize shift counts to 0.
+        await addDoc(collection(db, "employees"), {
+          name: employeeNameInput,
+          total_shifts_assigned: 0,
+          total_day_shifts_assigned: 0,
+          total_night_shifts_assigned: 0,
+        });
       }
       await fetchEmployees(); // Refresh the list
       handleCloseDialog();
       props.onEmployeeChange(); // Notify parent
     } catch (e: any) {
       console.error("Failed to save employee:", e);
-      setDialogError(`Failed to save employee: ${e.message}`);
+      setDialogError(`Failed to save employee to Firestore: ${e.message}`);
     }
   };
 
   const handleDeleteEmployee = async (employeeId: string) => {
-    // Optional: Add a confirmation dialog here
     if (!window.confirm("Are you sure you want to delete this employee? This action cannot be undone.")) {
         return;
     }
     try {
-      const response = await fetch(`${API_BASE_URL}/api/employees/${employeeId}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-      }
+      const employeeDocRef = doc(db, "employees", employeeId);
+      await deleteDoc(employeeDocRef);
       await fetchEmployees(); // Refresh the list
       props.onEmployeeChange(); // Notify parent
     } catch (e: any) {

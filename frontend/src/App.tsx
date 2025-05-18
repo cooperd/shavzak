@@ -1,15 +1,16 @@
+import { StrictMode } from 'react'
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import './App.css';
+import './utils/firebase.config';
+import { db } from './utils/firebase.config'; // Import Firestore instance
+import { collection, getDocs } from 'firebase/firestore'; // Import Firestore functions
 import { Box, Button, CircularProgress, Typography } from '@mui/material'; // Import MUI components
 import EmployeeManager from './components/EmployeeManager';
 import PreferenceGridAndCsvLoader from './components/PreferenceGridAndCsvLoader';
 import ProposedScheduleDisplay from './components/ProposedScheduleDisplay';
 import DashboardLayout from './components/DashboardLayout'; // Import the DashboardLayout
 import type { Employee, EmployeePreferences, ScheduleGenerationResponse } from './types'; // Ensure Employee type is imported
-
-const API_BASE_URL = ''; // Assuming Flask serves from root, same as before
-
 function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState<boolean>(true);
@@ -27,21 +28,22 @@ function App() {
     setLoadingEmployees(true);
     setEmployeeError(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/employees`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      if (Array.isArray(data)) { // Ensure it's an array
-        setEmployees(data as Employee[]);
-      } else {
-        console.error("Fetched employees data is not an array:", data);
-        setEmployees([]); // Default to empty array if data is not as expected
-        throw new Error("Received invalid employee data format from server.");
-      }
+      const employeesCollectionRef = collection(db, "employees");
+      const querySnapshot = await getDocs(employeesCollectionRef);
+      const fetchedEmployees: Employee[] = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: data.name || 'Unnamed Employee', // Default if name is missing
+          total_shifts_assigned: data.total_shifts_assigned || 0,
+          total_day_shifts_assigned: data.total_day_shifts_assigned || 0,
+          total_night_shifts_assigned: data.total_night_shifts_assigned || 0,
+        };
+      });
+      setEmployees(fetchedEmployees);
     } catch (e: any) {
-      console.error("Failed to fetch employees:", e);
-      setEmployeeError(`Failed to load employees: ${e.message}`);
+      console.error("Failed to fetch employees from Firestore in App.tsx:", e);
+      setEmployeeError(`Failed to load employees from Firestore: ${e.message}`);
       setEmployees([]); // Fallback to empty array on any error during fetch
     } finally {
       setLoadingEmployees(false);
@@ -76,7 +78,7 @@ function App() {
       };
       // console.log("Sending to /api/generate_schedule:", payload);
 
-      const response = await fetch(`${API_BASE_URL}/api/generate_schedule`, {
+      const response = await fetch(`/api/generate_schedule`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -117,62 +119,64 @@ function App() {
   };
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<DashboardLayout />}>
-          {/* Default route: Weekly Schedule & Preferences */}
-          <Route 
-            index 
-            element={
-              <>
-                {/* Moved Generate Schedule button and messages to the main view */}
-                <Box sx={{ marginBottom: 2, textAlign: 'center' }}>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    onClick={handleGenerateSchedule}
-                    disabled={employees.length === 0 || loadingEmployees || scheduleLoading}
-                  >
-                    {scheduleLoading ? <CircularProgress size={24} sx={{ color: 'white', mr:1 }} /> : null}
-                    {scheduleLoading ? 'Generating...' : 'Generate Schedule'}
-                  </Button>
-                </Box>
-                {scheduleError && <Typography color="error" align="center" sx={{ marginBottom: 2 }}>Error: {scheduleError}</Typography>}
-                {scheduleMessage && !scheduleError && <Typography color="success.main" align="center" sx={{ marginBottom: 2 }}>{scheduleMessage}</Typography>}
-                {proposedSchedule && Object.keys(proposedSchedule).length > 0 && !scheduleError && (
-                  <ProposedScheduleDisplay
-                    proposedSchedule={proposedSchedule}
-                    employees={employees}
-                    preferences={preferences}
-                  />
-                )}
-                {!proposedSchedule && !scheduleLoading && !scheduleError && (
-                  <Typography align="center" sx={{ marginTop: 2 }}>Click "Generate Schedule" to create a new weekly plan.</Typography>
-                )}
-              </>
-            } 
-          />
-          <Route 
-            path="employees" 
-            element={<EmployeeManager onEmployeeChange={fetchEmployees} />} 
-          />
-          <Route 
-            path="preferences" 
-            element={
-              <PreferenceGridAndCsvLoader
-                employees={employees}
-                preferences={preferences}
-                onPreferencesUpdate={handlePreferencesUpdate}
-                loadingEmployees={loadingEmployees}
-                onScheduleGenerateRequest={handleGenerateSchedule}
-                employeeError={employeeError}
-              />
-            } 
-          />
-          {/* You can add more routes here as needed */}
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <StrictMode>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<DashboardLayout />}>
+            {/* Default route: Weekly Schedule & Preferences */}
+            <Route
+              index
+              element={
+                <>
+                  {/* Moved Generate Schedule button and messages to the main view */}
+                  <Box sx={{ marginBottom: 2, textAlign: 'center' }}>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={handleGenerateSchedule}
+                      disabled={employees.length === 0 || loadingEmployees || scheduleLoading}
+                    >
+                      {scheduleLoading ? <CircularProgress size={24} sx={{ color: 'white', mr: 1 }} /> : null}
+                      {scheduleLoading ? 'Generating...' : 'Generate Schedule'}
+                    </Button>
+                  </Box>
+                  {scheduleError && <Typography color="error" align="center" sx={{ marginBottom: 2 }}>Error: {scheduleError}</Typography>}
+                  {scheduleMessage && !scheduleError && <Typography color="success.main" align="center" sx={{ marginBottom: 2 }}>{scheduleMessage}</Typography>}
+                  {proposedSchedule && Object.keys(proposedSchedule).length > 0 && !scheduleError && (
+                    <ProposedScheduleDisplay
+                      proposedSchedule={proposedSchedule}
+                      employees={employees}
+                      preferences={preferences}
+                    />
+                  )}
+                  {!proposedSchedule && !scheduleLoading && !scheduleError && (
+                    <Typography align="center" sx={{ marginTop: 2 }}>Click "Generate Schedule" to create a new weekly plan.</Typography>
+                  )}
+                </>
+              }
+            />
+            <Route
+              path="employees"
+              element={<EmployeeManager onEmployeeChange={fetchEmployees} />}
+            />
+            <Route
+              path="preferences"
+              element={
+                <PreferenceGridAndCsvLoader
+                  employees={employees}
+                  preferences={preferences}
+                  onPreferencesUpdate={handlePreferencesUpdate}
+                  loadingEmployees={loadingEmployees}
+                  onScheduleGenerateRequest={handleGenerateSchedule}
+                  employeeError={employeeError}
+                />
+              }
+            />
+            {/* You can add more routes here as needed */}
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </StrictMode>
   )
 }
 

@@ -1,9 +1,11 @@
 export interface Employee {
   id: string;
   name: string;
+  department: string;
   total_shifts_assigned: number;
   total_day_shifts_assigned: number;
   total_night_shifts_assigned: number;
+  weekend_shifts_assigned: number;
 }
 
 export const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];

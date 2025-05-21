@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useSession, useDescope } from '@descope/react-sdk';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEmployees } from './data/firestoreHooks'; // Import the useEmployees hook
 import './App.css';
-import './utils/firebase.config';
-import { db } from './utils/firebase.config'; // Import Firestore instance
-import { collection, getDocs } from 'firebase/firestore'; // Import Firestore functions
 import { Box, Button, CircularProgress, Typography } from '@mui/material'; // Import MUI components
 import EmployeeManager from './components/EmployeeManager';
 import PreferenceGridAndCsvLoader from './components/PreferenceGridAndCsvLoader';
@@ -18,9 +16,8 @@ const DAYS_OF_WEEK = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "F
 const SHIFT_TYPES = ["Day", "Night"];
 const MAX_SHIFTS_PER_WEEK = 5; // Example: Make this configurable if needed
 function App() {
-  const { isAuthenticated, isSessionLoading } = useSession();
+  const { isAuthenticated, isSessionLoading: isAuthLoading } = useSession(); // Renamed to avoid conflict
   const { logout } = useDescope();
-
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loadingEmployees, setLoadingEmployees] = useState<boolean>(true);
   const [employeeError, setEmployeeError] = useState<string | null>(null);
@@ -32,38 +29,24 @@ function App() {
   const [scheduleMessage, setScheduleMessage] = useState<string | null>(null); // For success/info messages
   const [proposedSchedule, setProposedSchedule] = useState<Record<string, string[]> | null>(null);
 
-  // Function to fetch employees
-  const fetchEmployees = async () => {
-    setLoadingEmployees(true);
-    setEmployeeError(null);
-    try {
-      const employeesCollectionRef = collection(db, "employees");
-      const querySnapshot = await getDocs(employeesCollectionRef);
-      const fetchedEmployees: Employee[] = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          name: data.name || 'Unnamed Employee', // Default if name is missing
-          total_shifts_assigned: data.total_shifts_assigned || 0,
-          total_day_shifts_assigned: data.total_day_shifts_assigned || 0,
-          total_night_shifts_assigned: data.total_night_shifts_assigned || 0,
-        };
-      });
-      setEmployees(fetchedEmployees);
-    } catch (e: any) {
-      console.error("Failed to fetch employees from Firestore in App.tsx:", e);
-      setEmployeeError(`Failed to load employees from Firestore: ${e.message}`);
-      setEmployees([]); // Fallback to empty array on any error during fetch
-    } finally {
-      setLoadingEmployees(false);
-    }
-  };
+  // Use the custom hook for fetching employees
+  const { data: fetchedEmployeesData, isLoading: employeesDataLoading, error: employeesDataError, refetch: refetchEmployeesData } = useEmployees();
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetchEmployees(); // Fetch employees only if authenticated
+      if (fetchedEmployeesData) {
+        setEmployees(fetchedEmployeesData);
+        setLoadingEmployees(false);
+        setEmployeeError(null);
+      } else if (employeesDataError) {
+        setEmployeeError(`Failed to load employees: ${employeesDataError.message}`);
+        setLoadingEmployees(false);
+        setEmployees([]);
+      } else if (employeesDataLoading) {
+        setLoadingEmployees(true);
+      }
     }
-  }, [isAuthenticated]); // Re-run if authentication status changes
+  }, [isAuthenticated, fetchedEmployeesData, employeesDataLoading, employeesDataError]);
 
   const handlePreferencesUpdate = (newPreferences: EmployeePreferences) => {
     setPreferences(newPreferences);
@@ -135,7 +118,7 @@ function App() {
     }
   };
 
-  if (isSessionLoading) {
+  if (isAuthLoading || (isAuthenticated && loadingEmployees)) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
         <CircularProgress />
@@ -165,7 +148,7 @@ function App() {
                       variant="contained"
                       color="primary"
                       onClick={handleGenerateSchedule}
-                      disabled={employees.length === 0 || loadingEmployees || scheduleLoading}
+                      disabled={employees.length === 0 || loadingEmployees || scheduleLoading || !!employeeError}
                     >
                       {scheduleLoading ? <CircularProgress size={24} sx={{ color: 'white', mr: 1 }} /> : null}
                       {scheduleLoading ? 'Generating...' : 'Generate Schedule'}
@@ -188,7 +171,7 @@ function App() {
             />
             <Route
               path="employees"
-              element={<EmployeeManager onEmployeeChange={fetchEmployees} />}
+              element={<EmployeeManager onEmployeeChange={refetchEmployeesData} />}
             />
             <Route
               path="preferences"
@@ -197,7 +180,7 @@ function App() {
                   employees={employees}
                   preferences={preferences}
                   onPreferencesUpdate={handlePreferencesUpdate}
-                  loadingEmployees={loadingEmployees}
+                  loadingEmployees={loadingEmployees} // Keep using local loadingEmployees for this component
                   onScheduleGenerateRequest={handleGenerateSchedule}
                   employeeError={employeeError}
                 />

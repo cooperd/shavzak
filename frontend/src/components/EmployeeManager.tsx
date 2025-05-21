@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import type { Employee } from '../types';
-import { db } from '../utils/firebase.config'; // Import Firestore instance
-import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc } from 'firebase/firestore'; // Import Firestore functions
+import React, { useState, useMemo } from 'react';
+import type { Employee } from '../types'; // Assuming Employee type is in ../types
+import { useEmployees, useAddEmployee, useUpdateEmployee, useDeleteEmployee } from '../data/firestoreHooks'; // Import custom hooks
 import {
   Button,
   CircularProgress,
@@ -30,55 +29,34 @@ interface EmployeeManagerProps {
 }
 
 const EmployeeManager: React.FC<EmployeeManagerProps> = (props) => {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  // Use custom hooks for Firestore operations
+  const { data: fetchedEmployees, isLoading: employeesLoading, error: employeesError, refetch: refetchEmployees } = useEmployees();
+  const { mutate: addEmployeeMutate, isPending: isAddingEmployee, error: addEmployeeError } = useAddEmployee();
+  const { mutate: updateEmployeeMutate, isPending: isUpdatingEmployee, error: updateEmployeeError } = useUpdateEmployee();
+  const { mutate: deleteEmployeeMutate, isPending: isDeletingEmployee, error: deleteEmployeeError } = useDeleteEmployee();
 
+  // Dialog state
   const [openDialog, setOpenDialog] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [employeeNameInput, setEmployeeNameInput] = useState('');
-  const [dialogError, setDialogError] = useState<string | null>(null);
+  const [employeeDepartmentInput, setEmployeeDepartmentInput] = useState(''); // New state for department
+  const [dialogFormError, setDialogFormError] = useState<string | null>(null); // For dialog-specific form errors
 
-  const fetchEmployees = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const employeesCollectionRef = collection(db, "employees");
-      const querySnapshot = await getDocs(employeesCollectionRef);
-      const fetchedEmployees: Employee[] = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          name: data.name || 'Unnamed Employee', // Default if name is missing
-          total_shifts_assigned: data.total_shifts_assigned || 0,
-          total_day_shifts_assigned: data.total_day_shifts_assigned || 0,
-          total_night_shifts_assigned: data.total_night_shifts_assigned || 0,
-        };
-      });
-      setEmployees(fetchedEmployees);
-    } catch (e: any) {
-      console.error("Failed to fetch employees:", e);
-      setError(`Failed to load employees from Firestore: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchEmployees();
-  }, []);
+  const employees = useMemo(() => fetchedEmployees || [], [fetchedEmployees]);
 
   const handleOpenAddDialog = () => {
     setEditingEmployee(null);
     setEmployeeNameInput('');
-    setDialogError(null);
+    setEmployeeDepartmentInput('');
+    setDialogFormError(null);
     setOpenDialog(true);
   };
 
   const handleOpenEditDialog = (employee: Employee) => {
     setEditingEmployee(employee);
     setEmployeeNameInput(employee.name);
-    setDialogError(null);
+    setEmployeeDepartmentInput(employee.department || ''); // Set department, default to empty if undefined
+    setDialogFormError(null);
     setOpenDialog(true);
   };
 
@@ -86,63 +64,88 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = (props) => {
     setOpenDialog(false);
     setEditingEmployee(null);
     setEmployeeNameInput('');
-    setDialogError(null);
+    setEmployeeDepartmentInput('');
+    setDialogFormError(null);
   };
 
   const handleSaveEmployee = async () => {
     if (!employeeNameInput.trim()) {
-      setDialogError("Employee name cannot be empty.");
+      setDialogFormError("Employee name cannot be empty.");
       return;
     }
-    setDialogError(null);
+    setDialogFormError(null);
 
-    try {
-      if (editingEmployee) {
-        // Update existing employee
-        const employeeDocRef = doc(db, "employees", editingEmployee.id);
-        await updateDoc(employeeDocRef, {
-          name: employeeNameInput,
-          // Note: We are only updating the name here.
-          // If other fields like shift counts are managed elsewhere or calculated,
-          // this is fine. If they are meant to be directly editable or reset,
-          // you might need to adjust this.
-        });
-      } else {
-        // Add new employee
-        // For a new employee, we'll initialize shift counts to 0.
-        await addDoc(collection(db, "employees"), {
-          name: employeeNameInput,
-          total_shifts_assigned: 0,
-          total_day_shifts_assigned: 0,
-          total_night_shifts_assigned: 0,
-        });
-      }
-      await fetchEmployees(); // Refresh the list
+    const commonSuccessHandler = () => {
+      refetchEmployees();
       handleCloseDialog();
-      props.onEmployeeChange(); // Notify parent
-    } catch (e: any) {
+      props.onEmployeeChange();
+    };
+
+    const commonErrorHandler = (e: Error) => {
       console.error("Failed to save employee:", e);
-      setDialogError(`Failed to save employee to Firestore: ${e.message}`);
+      setDialogFormError(`Failed to save employee: ${e.message}`);
+    };
+
+    if (editingEmployee) {
+      // Update existing employee
+      // The useUpdateEmployee hook expects the full Employee object.
+      // We only want to update name and department. The hook itself handles this.
+      const updatedEmployeeData: Employee = {
+        ...editingEmployee, // Spread existing fields to satisfy the type
+        name: employeeNameInput,
+        department: employeeDepartmentInput.trim() || 'N/A',
+      };
+      updateEmployeeMutate(updatedEmployeeData, {
+        onSuccess: commonSuccessHandler,
+        onError: commonErrorHandler,
+      });
+    } else {
+      // Add new employee
+      // The useAddEmployee hook expects Omit<Employee, 'id'>.
+      // The hook internally initializes stats, createdAt, updatedAt.
+      // We provide the fields required by Omit<Employee, 'id'>.
+      // total_shifts_assigned etc. are part of Employee type, so we provide them as 0.
+      // The hook's `stats` object will be the source of truth for these values on read.
+      const newEmployeeData: Omit<Employee, 'id'> = {
+        name: employeeNameInput,
+        department: employeeDepartmentInput.trim() || 'N/A',
+        total_shifts_assigned: 0,
+        total_day_shifts_assigned: 0,
+        total_night_shifts_assigned: 0,
+        // Assuming weekend_shifts_assigned is also part of Employee type
+        // If not, it should be removed or the type updated.
+        // For now, let's assume it's there based on firestoreHooks.ts
+        weekend_shifts_assigned: 0,
+      };
+      addEmployeeMutate(newEmployeeData, {
+        onSuccess: commonSuccessHandler,
+        onError: commonErrorHandler,
+      });
     }
   };
 
   const handleDeleteEmployee = async (employeeId: string) => {
     if (!window.confirm("Are you sure you want to delete this employee? This action cannot be undone.")) {
-        return;
+      return;
     }
-    try {
-      const employeeDocRef = doc(db, "employees", employeeId);
-      await deleteDoc(employeeDocRef);
-      await fetchEmployees(); // Refresh the list
-      props.onEmployeeChange(); // Notify parent
-    } catch (e: any) {
-      console.error("Failed to delete employee:", e);
-      setError(`Failed to delete employee: ${e.message}`); // Show error in main area or a snackbar
-    }
+    deleteEmployeeMutate(employeeId, {
+      onSuccess: () => {
+        refetchEmployees();
+        props.onEmployeeChange();
+      },
+      onError: (e: Error) => {
+        console.error("Failed to delete employee:", e);
+        // Display this error more prominently if needed, e.g., using a snackbar
+        // For now, using dialogFormError or a general error display
+        setDialogFormError(`Failed to delete employee: ${e.message}`);
+      },
+    });
   };
 
-  if (loading) return <CircularProgress />;
-  if (error) return <Typography color="error">{error}</Typography>;
+  if (employeesLoading) return <CircularProgress />;
+  if (employeesError) return <Typography color="error" sx={{ mt: 2 }}>{`Error fetching employees: ${employeesError.message}`}</Typography>;
+  // Display mutation errors if they occur outside the dialog context (e.g., delete error if dialog is closed)
+  const generalMutationError = deleteEmployeeError; // Add other general mutation errors if applicable
 
   return (
     <Paper elevation={3} sx={{ padding: 2, marginTop: 2 }}>
@@ -154,12 +157,18 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = (props) => {
           Add Employee
         </Button>
       </Box>
+      {generalMutationError && (
+        <Typography color="error" sx={{ mb: 2 }}>
+          {`Error: ${generalMutationError.message}`}
+        </Typography>
+      )}
 
       <TableContainer component={Paper} elevation={0}> {/* Use Paper for container */}
         <Table size="small" aria-label="employee table">
           <TableHead>
             <TableRow>
               <TableCell sx={{ fontWeight: 'bold' }}>Name</TableCell>
+              <TableCell sx={{ fontWeight: 'bold' }}>Department</TableCell> {/* New Column */}
               <TableCell align="right" sx={{ fontWeight: 'bold' }}>Total Shifts</TableCell>
               <TableCell align="right" sx={{ fontWeight: 'bold' }}>Day Shifts</TableCell>
               <TableCell align="right" sx={{ fontWeight: 'bold' }}>Night Shifts</TableCell>
@@ -175,6 +184,7 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = (props) => {
                 <TableCell component="th" scope="row">
                   {employee.name}
                 </TableCell>
+                <TableCell>{employee.department || 'N/A'}</TableCell> {/* Display Department */}
                 <TableCell align="right">{employee.total_shifts_assigned}</TableCell>
                 <TableCell align="right">{employee.total_day_shifts_assigned}</TableCell>
                 <TableCell align="right">{employee.total_night_shifts_assigned}</TableCell>
@@ -183,8 +193,8 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = (props) => {
                 <IconButton edge="end" aria-label="edit" onClick={() => handleOpenEditDialog(employee)} sx={{marginRight: 1}}>
                   <EditIcon />
                 </IconButton>
-                <IconButton edge="end" aria-label="delete" onClick={() => handleDeleteEmployee(employee.id)}>
-                  <DeleteIcon />
+                <IconButton edge="end" aria-label="delete" onClick={() => handleDeleteEmployee(employee.id)} disabled={isDeletingEmployee}>
+                  {isDeletingEmployee && editingEmployee?.id === employee.id ? <CircularProgress size={24} /> : <DeleteIcon />}
                 </IconButton>
               </>
                 </TableCell>
@@ -197,11 +207,11 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = (props) => {
       <Dialog open={openDialog} onClose={handleCloseDialog}>
         <DialogTitle>{editingEmployee ? 'Edit Employee' : 'Add New Employee'}</DialogTitle>
         <DialogContent>
-          <DialogContentText sx={{marginBottom: 2}}>
-            Please enter the name for the employee.
+          <DialogContentText sx={{ marginBottom: 1 }}>
+            Please enter the details for the employee.
           </DialogContentText>
           <TextField
-            autoFocus
+            autoFocus={!editingEmployee} // Autofocus name only when adding
             margin="dense"
             id="name"
             label="Employee Name"
@@ -210,13 +220,30 @@ const EmployeeManager: React.FC<EmployeeManagerProps> = (props) => {
             variant="standard"
             value={employeeNameInput}
             onChange={(e) => setEmployeeNameInput(e.target.value)}
-            error={!!dialogError}
-            helperText={dialogError}
+            error={!!dialogFormError && employeeNameInput.trim() === ''} // Show error only if name is empty
+            helperText={
+              (!!dialogFormError && employeeNameInput.trim() === '' ? dialogFormError : '') ||
+              addEmployeeError?.message ||
+              updateEmployeeError?.message
+            }
+          />
+          <TextField
+            margin="dense"
+            id="department"
+            label="Department"
+            type="text"
+            fullWidth
+            variant="standard"
+            value={employeeDepartmentInput}
+            onChange={(e) => setEmployeeDepartmentInput(e.target.value)}
+            // No specific error for department for now, but can be added
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog}>Cancel</Button>
-          <Button onClick={handleSaveEmployee}>{editingEmployee ? 'Save Changes' : 'Add Employee'}</Button>
+          <Button onClick={handleSaveEmployee} disabled={isAddingEmployee || isUpdatingEmployee}>
+            {isAddingEmployee || isUpdatingEmployee ? <CircularProgress size={24} /> : (editingEmployee ? 'Save Changes' : 'Add Employee')}
+          </Button>
         </DialogActions>
       </Dialog>
     </Paper>
